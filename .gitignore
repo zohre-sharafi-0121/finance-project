@@ -1,0 +1,16 @@
+## virtual env
+venv
+
+## media and static files
+media
+
+##  pycahche files
+__pycache__
+
+## .env and secet files
+.env
+
+## sqlite database
+db.sqlite3
+
+.vscode/

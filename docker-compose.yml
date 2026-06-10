@@ -1,0 +1,190 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SSL is handled by your CDN (Cloudflare).
+# Traefik only handles HTTP internally — no certificates needed here.
+#
+# ENVIRONMENT VARIABLES NEEDED IN .env:
+#
+#   DOMAIN=yourdomain.com
+#   TRAEFIK_DASHBOARD_USER=admin
+#   TRAEFIK_DASHBOARD_HASHED_PASSWORD=   ← htpasswd -nb admin yourpassword
+#
+#   POSTGRES_DB=fintech
+#   POSTGRES_USER=postgres
+#   POSTGRES_PASSWORD=strongpassword
+#   DJANGO_SECRET_KEY=your-secret-key
+#   DJANGO_ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+#   STRIPE_SECRET_KEY=sk_live_...
+#   DEFAULT_FROM_EMAIL=noreply@yourdomain.com
+# ─────────────────────────────────────────────────────────────────────────────
+
+networks:
+  proxy:      # Traefik-facing — services that need public routing
+    external: false
+  internal:   # Backend-only — DB and Redis, never exposed
+    external: false
+
+volumes:
+  postgres_data:
+  redis_data:
+  media_files:
+
+services:
+
+  # ── Traefik ──────────────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.0
+    restart: always
+    networks:
+      - proxy
+    ports:
+      - "80:80"       # Only HTTP — CDN handles HTTPS
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command:
+      - --api.dashboard=true
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80   # Single entrypoint, no TLS
+      - --log.level=INFO
+      - --accesslog=true
+    labels:
+      - "traefik.enable=true"
+      # Dashboard at traefik.yourdomain.com — CDN proxies this too
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      - "traefik.http.routers.dashboard.middlewares=dashboard-auth"
+      - "traefik.http.middlewares.dashboard-auth.basicauth.users=${TRAEFIK_DASHBOARD_USER}:${TRAEFIK_DASHBOARD_HASHED_PASSWORD}"
+
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    restart: always
+    networks:
+      - internal
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB}
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  # ── Redis ─────────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - internal
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+
+  # ── Django API ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - proxy
+      - internal
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn backend.wsgi:application
+               --bind 0.0.0.0:8000
+               --workers 3
+               --timeout 120"
+    env_file: .env
+    volumes:
+      - media_files:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+      # /api/ routes
+      - "traefik.http.routers.api.rule=Host(`${DOMAIN}`) && PathPrefix(`/api/`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.routers.api.service=api"
+      # /admin/ routes
+      - "traefik.http.routers.admin.rule=Host(`${DOMAIN}`) && PathPrefix(`/admin/`)"
+      - "traefik.http.routers.admin.entrypoints=web"
+      - "traefik.http.routers.admin.service=api"
+      # /media/ routes
+      - "traefik.http.routers.media.rule=Host(`${DOMAIN}`) && PathPrefix(`/media/`)"
+      - "traefik.http.routers.media.entrypoints=web"
+      - "traefik.http.routers.media.service=api"
+
+
+  # ── Celery Worker ──────────────────────────────────────────────────────────────
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - internal
+    command: celery -A backend worker --loglevel=info --concurrency=4
+    env_file: .env
+    volumes:
+      - media_files:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+
+  # ── Celery Beat ────────────────────────────────────────────────────────────────
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - internal
+    command: celery -A backend beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+
+  # ── React Frontend ─────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: always
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      # Catch-all — lower priority than /api/ and /admin/
+      - "traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.frontend.entrypoints=web"
+      - "traefik.http.routers.frontend.priority=1"
+      - "traefik.http.services.frontend.loadbalancer.server.port=80"

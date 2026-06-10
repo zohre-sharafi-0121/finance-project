@@ -1,0 +1,64 @@
+/* static/admin/custom-unfold.css */
+
+/* 1. Load Vazir font(s) – keep your existing @font-face(s) */
+@font-face {
+    font-family: 'Vazir';
+    src: url('/static/fonts/Vazir-Regular.woff2') format('woff2'),
+         url('/static/fonts/Vazir-Regular.woff') format('woff');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazir';
+    src: url('/static/fonts/Vazir-Medium.woff2') format('woff2');
+    font-weight: 500;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Vazir';
+    src: url('/static/fonts/Vazir-Bold.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* Optional: if you have a mono variant or want better code blocks */
+/* @font-face { ... Vazir Code or JetBrains Mono ... } */
+
+/* 2. Override the main font variables Unfold uses (most important part) */
+:root {
+    --font-family-primary: 'Vazir', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-family-sans:    'Vazir', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-family-mono:    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;  /* keep mono sane */
+}
+
+/* Force RTL direction & right alignment for Unfold admin */
+html,
+body {
+    direction: rtl;
+    text-align: right;
+}
+
+/* Make sure the main content and section titles are right-aligned */
+main,
+#content,
+.app-list,
+.module,
+.unfold-card-header,
+.unfold-card-title {
+    text-align: right;
+}
+
+/* 4. Fix inputs / textareas / selects (often forgotten) */
+input, textarea, select, button {
+    font-family: 'Vazir', system-ui, sans-serif;
+}
+
+/* 5. Optional safety net – only if some places are still wrong */
+body, .font-sans, .font-primary {
+    font-family: var(--font-family-sans) !important;
+}
