@@ -2,12 +2,6 @@
 
 A production-ready backend for managing wallets, transfers, savings goals, and transaction history. Built with Django REST Framework, Redis, and Celery — containerized with Docker and deployed behind Traefik with CDN-based SSL.
 
-> **Live API:** [https://portfolioproject.ir/api/](https://portfolioproject.ir/api/)
-> **API Docs:** [https://portfolioproject.ir/api/docs/](https://portfolioproject.ir/api/docs/)
-> **Infrastructure Dashboard:** [https://traefik.portfolioproject.ir](https://traefik.portfolioproject.ir) *(credentials in demo section below)*
-
----
-
 ## 📸 Screenshots
 
 ### Admin Panel — Transactions
@@ -34,9 +28,9 @@ Cloudflare (SSL / CDN / DDoS protection)
  │
  ▼  HTTP
 Traefik (reverse proxy + service discovery)
- ├── portfolioproject.ir/api/      → Django (Gunicorn, 3 workers)
- ├── portfolioproject.ir/admin/    → Django Admin
- └── traefik.portfolioproject.ir   → Traefik Dashboard
+ ├── domain.ir/api/      → Django (Gunicorn, 3 workers)
+ ├── domain.ir/admin/    → Django Admin
+ └── traefik.domain.ir   → Traefik Dashboard
           │
           ├── internal network ──────────────────────────────
           │       PostgreSQL 15       (persistent volume)
@@ -232,16 +226,6 @@ Rather than per-field invalidation, the entire user cache namespace is dropped o
 **Two Docker networks**
 PostgreSQL and Redis are on the `internal` network only. Even if Traefik were misconfigured, the database is unreachable from outside.
 
----
-
-## 🔐 Demo Access
-
-| Resource | URL | Credentials |
-|----------|-----|-------------|
-| Django Admin | https://portfolioproject.ir/admin/ | admin / ask-me |
-| Traefik Dashboard | https://traefik.portfolioproject.ir | admin / ask-me |
-
----
 
 ## 📄 License
 
